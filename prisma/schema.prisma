@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum Preset {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model VideoJob {
+  id             String    @id @default(uuid())
+  status         JobStatus @default(QUEUED)
+  originalName   String
+  originalSize   BigInt
+  compressedSize BigInt?
+  preset         Preset    @default(MEDIUM)
+  maxWidth       Int?
+  targetSizeMB   Float?
+  progress       Int       @default(0)
+  error          String?
+  inputPath      String
+  outputPath     String?
+  usedOriginal   Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  expiresAt      DateTime
+
+  @@map("video_jobs")
+}
