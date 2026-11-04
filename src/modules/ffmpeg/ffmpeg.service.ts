@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as ffmpeg from 'fluent-ffmpeg';
-import * as ffmpegStatic from 'ffmpeg-static';
-import * as ffprobeStatic from 'ffprobe-static';
+import ffmpeg = require('fluent-ffmpeg');
 import * as fs from 'fs';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpegPath = require('ffmpeg-static') as string | null;
 import {
   CompressOptions,
   PRESET_AUDIO_BITRATE,
@@ -10,15 +10,19 @@ import {
   ProbeResult,
 } from './ffmpeg.types';
 
+// ffprobe-static has no @types — inline declaration
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffprobePath: string = require('ffprobe-static').path as string;
+
 @Injectable()
 export class FfmpegService {
   private readonly logger = new Logger(FfmpegService.name);
 
   constructor() {
-    if (ffmpegStatic) {
-      ffmpeg.setFfmpegPath(ffmpegStatic as unknown as string);
+    if (ffmpegPath) {
+      ffmpeg.setFfmpegPath(ffmpegPath);
     }
-    ffmpeg.setFfprobePath(ffprobeStatic.path);
+    ffmpeg.setFfprobePath(ffprobePath);
   }
 
   probe(filePath: string): Promise<ProbeResult> {
@@ -65,21 +69,23 @@ export class FfmpegService {
         .format('mp4');
 
       if (maxWidth) {
-        // scale down only if wider than maxWidth; keep aspect ratio; height must be even
         command = command.videoFilter(
           `scale='if(gt(iw,${maxWidth}),${maxWidth},iw)':-2`,
         );
       }
 
       if (onProgress) {
-        command = command.on('progress', (p) => {
-          const percent = Math.min(Math.round(p.percent ?? 0), 99);
-          onProgress(percent);
-        });
+        command = command.on(
+          'progress',
+          (p: { percent?: number }) => {
+            const percent = Math.min(Math.round(p.percent ?? 0), 99);
+            onProgress(percent);
+          },
+        );
       }
 
       command
-        .on('error', (err) => {
+        .on('error', (err: Error) => {
           this.logger.error(`FFmpeg error: ${err.message}`);
           reject(err);
         })
