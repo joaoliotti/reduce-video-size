@@ -18,10 +18,10 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
-  const port = config.get<number>('PORT');
-  const corsOrigin = config.get<string>('CORS_ORIGIN');
-  const swaggerUser = config.get<string>('SWAGGER_USER');
-  const swaggerPassword = config.get<string>('SWAGGER_PASSWORD');
+  const port = config.get<number>('PORT')!;
+  const corsOrigin = config.get<string>('CORS_ORIGIN')!;
+  const swaggerUser = config.get<string>('SWAGGER_USER')!;
+  const swaggerPassword = config.get<string>('SWAGGER_PASSWORD')!;
   const logger = new Logger('Bootstrap');
 
   app.use(helmetFn());
