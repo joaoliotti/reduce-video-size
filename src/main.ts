@@ -1,3 +1,7 @@
+// Load .env BEFORE any module is imported so process.env is available
+// in Multer decorator expressions (evaluated at class-definition time)
+import 'dotenv/config';
+
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -14,10 +18,10 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
-  const port = config.get<number>('PORT', 3000);
-  const corsOrigin = config.get<string>('CORS_ORIGIN', 'http://localhost:3000');
-  const swaggerUser = config.get<string>('SWAGGER_USER', 'admin');
-  const swaggerPassword = config.get<string>('SWAGGER_PASSWORD', 'dev-only');
+  const port = config.get<number>('PORT');
+  const corsOrigin = config.get<string>('CORS_ORIGIN');
+  const swaggerUser = config.get<string>('SWAGGER_USER');
+  const swaggerPassword = config.get<string>('SWAGGER_PASSWORD');
   const logger = new Logger('Bootstrap');
 
   app.use(helmetFn());

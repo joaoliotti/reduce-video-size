@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import * as fs from 'fs';
@@ -11,7 +11,9 @@ import {
 } from './jobs.constants';
 import { JobsService } from './jobs.service';
 
-@Processor(VIDEO_QUEUE)
+@Processor(VIDEO_QUEUE, {
+  concurrency: parseInt(process.env['FFMPEG_CONCURRENCY']!, 10),
+})
 export class JobsProcessor extends WorkerHost {
   private readonly logger = new Logger(JobsProcessor.name);
 
@@ -21,6 +23,21 @@ export class JobsProcessor extends WorkerHost {
     private readonly storageService: StorageService,
   ) {
     super();
+  }
+
+  @OnWorkerEvent('ready')
+  onReady() {
+    this.logger.log('Worker connected to Redis and ready');
+  }
+
+  @OnWorkerEvent('error')
+  onError(err: Error) {
+    this.logger.error(`Worker error: ${err.message}`, err.stack);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    this.logger.error(`Job ${job?.id ?? '?'} failed: ${err.message}`);
   }
 
   async process(job: Job<CompressJobPayload>): Promise<void> {
@@ -53,7 +70,6 @@ export class JobsProcessor extends WorkerHost {
       const compressedSize = BigInt(compressedStat.size);
 
       if (compressedSize >= originalSize) {
-        // Compressed is not smaller — return original
         await this.jobsService.update(jobId, {
           status: 'DONE',
           progress: 100,
@@ -63,9 +79,7 @@ export class JobsProcessor extends WorkerHost {
           finishedAt: new Date(),
         });
         await this.storageService.deleteFiles(outputPath);
-        this.logger.log(
-          `Job ${jobId}: compressed >= original, keeping original`,
-        );
+        this.logger.log(`Job ${jobId}: compressed >= original, keeping original`);
       } else {
         await this.jobsService.update(jobId, {
           status: 'DONE',
@@ -75,9 +89,7 @@ export class JobsProcessor extends WorkerHost {
           usedOriginal: false,
           finishedAt: new Date(),
         });
-        this.logger.log(
-          `Job ${jobId}: done. ${originalSize} → ${compressedSize} bytes`,
-        );
+        this.logger.log(`Job ${jobId}: done. ${originalSize} → ${compressedSize} bytes`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

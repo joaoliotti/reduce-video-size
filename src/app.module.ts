@@ -20,14 +20,13 @@ import { VideosModule } from '@/modules/videos/videos.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
+          host: config.get<string>('REDIS_HOST'),
+          port: config.get<number>('REDIS_PORT'),
           password: config.get<string>('REDIS_PASSWORD') || undefined,
         },
         defaultJobOptions: {
           attempts: 3,
           backoff: { type: 'exponential', delay: 5000 },
-          timeout: 30 * 60 * 1000,
         },
       }),
     }),
@@ -37,8 +36,8 @@ import { VideosModule } from '@/modules/videos/videos.module';
       useFactory: (config: ConfigService) => ({
         throttlers: [
           {
-            ttl: config.get<number>('THROTTLE_TTL', 60) * 1000,
-            limit: config.get<number>('THROTTLE_LIMIT', 30),
+            ttl: config.get<number>('THROTTLE_TTL')! * 1000,
+            limit: config.get<number>('THROTTLE_LIMIT')!,
           },
         ],
       }),

@@ -1,0 +1,125 @@
+{
+  "info": {
+    "name": "reduce-video-size",
+    "_postman_id": "reduce-video-size-api",
+    "description": "Async video compression API — upload, poll status, download, delete.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3340",
+      "type": "string"
+    },
+    {
+      "key": "jobId",
+      "value": "",
+      "type": "string",
+      "description": "Filled automatically after POST /videos/compress"
+    }
+  ],
+  "item": [
+    {
+      "name": "Compress video",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 202) {",
+              "  const json = pm.response.json();",
+              "  pm.collectionVariables.set('jobId', json.jobId);",
+              "  console.log('jobId saved:', json.jobId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "",
+              "description": "Video file (mp4, mov, mkv, webm, avi)"
+            },
+            {
+              "key": "preset",
+              "value": "medium",
+              "type": "text",
+              "description": "low | medium | high"
+            },
+            {
+              "key": "maxWidth",
+              "value": "1280",
+              "type": "text",
+              "description": "Optional — max output width in pixels",
+              "disabled": true
+            },
+            {
+              "key": "targetSizeMB",
+              "value": "10",
+              "type": "text",
+              "description": "Optional — best-effort target size in MB",
+              "disabled": true
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/videos/compress",
+          "host": ["{{baseUrl}}"],
+          "path": ["videos", "compress"]
+        },
+        "description": "Upload a video for async compression. Returns jobId immediately. The `jobId` variable is auto-saved for the other requests."
+      },
+      "response": []
+    },
+    {
+      "name": "Get job status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/videos/{{jobId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["videos", "{{jobId}}"]
+        },
+        "description": "Poll status (queued → processing → done | failed), progress 0-100, sizes and reduction %."
+      },
+      "response": []
+    },
+    {
+      "name": "Download compressed video",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/videos/{{jobId}}/download",
+          "host": ["{{baseUrl}}"],
+          "path": ["videos", "{{jobId}}", "download"]
+        },
+        "description": "Streams the compressed file (or original if compressed was larger). Only works when status = done."
+      },
+      "response": []
+    },
+    {
+      "name": "Delete job",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/videos/{{jobId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["videos", "{{jobId}}"]
+        },
+        "description": "Removes the job record and both input/output files from disk. Returns 204."
+      },
+      "response": []
+    }
+  ]
+}

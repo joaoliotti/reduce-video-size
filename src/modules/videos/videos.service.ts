@@ -21,23 +21,10 @@ import { CompressVideoDto, PresetEnum } from './dto/compress-video.dto';
 import { JobStatusResponseDto } from './dto/job-status-response.dto';
 import { VideoJob } from '@prisma/client';
 
-const ALLOWED_MIMETYPES = [
-  'video/mp4',
-  'video/quicktime',
-  'video/x-matroska',
-  'video/webm',
-  'video/x-msvideo',
-  'video/avi',
-];
-
-const MIME_TO_EXT: Record<string, string> = {
-  'video/mp4': '.mp4',
-  'video/quicktime': '.mov',
-  'video/x-matroska': '.mkv',
-  'video/webm': '.webm',
-  'video/x-msvideo': '.avi',
-  'video/avi': '.avi',
-};
+// Allowed extensions — mimetype is NOT checked here because curl/Windows
+// often sends application/octet-stream regardless of the actual format.
+// ffprobe is the real validator (runs below).
+const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.mkv', '.webm', '.avi'];
 
 @Injectable()
 export class VideosService {
@@ -55,14 +42,15 @@ export class VideosService {
     file: Express.Multer.File,
     dto: CompressVideoDto,
   ): Promise<{ jobId: string; status: string }> {
-    if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
       await this.storageService.deleteFiles(file.path);
       throw new BadRequestException(
-        `Tipo de arquivo não suportado: ${file.mimetype}. Aceitos: mp4, mov, mkv, webm, avi`,
+        `Extensão não suportada: ${ext || '(nenhuma)'}. Aceitos: mp4, mov, mkv, webm, avi`,
       );
     }
 
-    // Validate with ffprobe
+    // ffprobe is the authoritative validator — rejects corrupt/non-video files
     try {
       await this.ffmpegService.probe(file.path);
     } catch {
@@ -77,7 +65,7 @@ export class VideosService {
       | 'MEDIUM'
       | 'HIGH';
 
-    const ttlHours = this.config.get<number>('JOB_TTL_HOURS', 24);
+    const ttlHours = this.config.get<number>('JOB_TTL_HOURS')!;
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     const stat = fs.statSync(file.path);

@@ -78,7 +78,8 @@ export class FfmpegService {
         command = command.on(
           'progress',
           (p: { percent?: number }) => {
-            const percent = Math.min(Math.round(p.percent ?? 0), 99);
+            const raw = p.percent;
+            const percent = Math.min(Math.round(Number.isFinite(raw) ? raw! : 0), 99);
             onProgress(percent);
           },
         );

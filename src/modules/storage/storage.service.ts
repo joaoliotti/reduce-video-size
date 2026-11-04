@@ -12,11 +12,11 @@ export class StorageService {
   constructor(private readonly config: ConfigService) {
     this.uploadsDir = path.resolve(
       process.cwd(),
-      config.get<string>('UPLOADS_DIR', 'uploads'),
+      config.get<string>('UPLOADS_DIR')!,
     );
     this.outputDir = path.resolve(
       process.cwd(),
-      config.get<string>('OUTPUT_DIR', 'output'),
+      config.get<string>('OUTPUT_DIR')!,
     );
     this.ensureDirs();
   }

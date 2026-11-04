@@ -22,7 +22,6 @@ import {
 } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { Response } from 'express';
-import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { CompressVideoDto } from './dto/compress-video.dto';
@@ -35,10 +34,7 @@ import { VideosService } from './videos.service';
 @ApiTags('videos')
 @Controller('videos')
 export class VideosController {
-  constructor(
-    private readonly videosService: VideosService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly videosService: VideosService) {}
 
   @Post('compress')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -60,21 +56,18 @@ export class VideosController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: (req, _file, cb) => {
-          const config: ConfigService = req.app.get(ConfigService);
-          const uploadsDir = path.resolve(
-            process.cwd(),
-            config.get<string>('UPLOADS_DIR', 'uploads'),
-          );
-          cb(null, uploadsDir);
-        },
+        destination: path.resolve(
+          process.cwd(),
+          process.env['UPLOADS_DIR']!,
+        ),
         filename: (_req, file, cb) => {
           const ext = path.extname(file.originalname).toLowerCase() || '.mp4';
           cb(null, `${uuidv4()}${ext}`);
         },
       }),
       limits: {
-        fileSize: parseInt(process.env['MAX_UPLOAD_MB'] ?? '500') * 1024 * 1024,
+        fileSize:
+          parseInt(process.env['MAX_UPLOAD_MB']!) * 1024 * 1024,
       },
     }),
   )
