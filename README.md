@@ -1,95 +1,116 @@
 # reduce-video-size
 
-Async video compression API built with NestJS + FFmpeg. Upload a video, get a `jobId` back immediately, poll for status, download the compressed file.
+API para compressão assíncrona de vídeos. Você faz o upload, recebe um `jobId` na hora e a compressão acontece em background via FFmpeg. Quando terminar, é só baixar.
+
+---
+
+## Por que esse projeto existe?
+
+Comprimir vídeo no browser é lento e limitado. Comprimir no servidor de forma síncrona trava a requisição por minutos. Essa API resolve os dois problemas: o upload retorna imediatamente, a compressão roda em background com uma fila (BullMQ + Redis), e você acompanha o progresso por polling.
+
+---
 
 ## Stack
 
-- **NestJS 11** (TypeScript strict)
-- **FFmpeg** via `fluent-ffmpeg` + `ffmpeg-static` / `ffprobe-static` (no host install needed)
-- **BullMQ + Redis** for async job queue
-- **Prisma + PostgreSQL** for job persistence
-- **Multer disk storage** (never loads full video in memory)
+| Camada | Tecnologia |
+|---|---|
+| Framework | NestJS 11 + TypeScript strict |
+| Compressão | FFmpeg via `fluent-ffmpeg` + `ffmpeg-static` |
+| Fila | BullMQ + Redis |
+| Banco | Prisma + PostgreSQL |
+| Upload | Multer disk storage (nunca carrega o vídeo inteiro em memória) |
+
+> `ffmpeg-static` e `ffprobe-static` embarcam os binários do FFmpeg no `node_modules` — não precisa instalar nada no servidor manualmente.
 
 ---
 
-## Quickstart with Docker
+## Como rodar
+
+### Com Docker (recomendado)
+
+Sobe tudo (API + PostgreSQL + Redis) com um comando:
 
 ```bash
 cp .env.example .env
+# edite o .env se necessário
 docker-compose up -d
 ```
 
-The API will be available at `http://localhost:3000`.
+API disponível em `http://localhost:3000`.
 
 ---
 
-## Local development
-
-**Prerequisites:** Node 24+, PostgreSQL, Redis
+### Local (Node + Postgres + Redis já instalados)
 
 ```bash
 cp .env.example .env
-# Edit .env with your DB and Redis credentials
+# edite o .env com sua DATABASE_URL, REDIS_HOST etc.
 
 npm install --legacy-peer-deps
 
 npx prisma migrate dev --name init
-npx prisma generate
 
 npm run start:dev
 ```
 
 ---
 
-## Environment variables
+## Variáveis de ambiente
 
-See `.env.example` for all variables. Key ones:
+Copie `.env.example` para `.env` e preencha. Todas as variáveis são obrigatórias — a aplicação não sobe se alguma estiver faltando.
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `REDIS_HOST` | `localhost` | Redis host |
-| `MAX_UPLOAD_MB` | `500` | Upload size limit |
-| `FFMPEG_CONCURRENCY` | `2` | Max parallel FFmpeg processes |
-| `JOB_TTL_HOURS` | `24` | Hours before job/files are auto-deleted |
-| `CORS_ORIGIN` | `http://localhost:3000` | Allowed CORS origins (comma-separated) |
-| `SWAGGER_USER` / `SWAGGER_PASSWORD` | `admin` / `dev-only` | Swagger basic auth |
+| Variável | Descrição |
+|---|---|
+| `DATABASE_URL` | String de conexão PostgreSQL |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Conexão com Redis |
+| `UPLOADS_DIR` / `OUTPUT_DIR` | Pastas de upload e saída (relativas à raiz do projeto) |
+| `MAX_UPLOAD_MB` | Limite de tamanho de upload em MB |
+| `FFMPEG_CONCURRENCY` | Número máximo de processos FFmpeg simultâneos |
+| `JOB_TTL_HOURS` | Horas até um job expirar e os arquivos serem apagados automaticamente |
+| `CORS_ORIGIN` | Origens permitidas no CORS (separadas por vírgula) |
+| `SWAGGER_USER` / `SWAGGER_PASSWORD` | Credenciais de acesso ao Swagger |
+| `THROTTLE_TTL` / `THROTTLE_LIMIT` | Rate limit: `LIMIT` requisições a cada `TTL` segundos |
 
 ---
 
 ## Endpoints
 
-### POST `/videos/compress`
+### `POST /videos/compress`
 
-Upload a video for async compression.
+Faz upload do vídeo e enfileira a compressão. Retorna na hora com o `jobId`.
 
 ```bash
+# Linux/macOS
 curl -X POST http://localhost:3000/videos/compress \
-  -F "file=@/path/to/video.mp4" \
+  -F "file=@/caminho/video.mp4" \
+  -F "preset=medium"
+
+# Windows (PowerShell)
+curl.exe -s -X POST http://localhost:3000/videos/compress `
+  -F "file=@C:\caminho\video.mp4" `
   -F "preset=medium"
 ```
 
-Optional form fields:
-- `preset`: `low` | `medium` | `high` (default: `medium`)
-- `maxWidth`: integer — max output width in pixels (preserves aspect ratio, never upscales)
-- `targetSizeMB`: number — best-effort target output size
+Campos opcionais do form:
+- `preset`: `low` | `medium` | `high` — quanto menor, menor o arquivo (e menor a qualidade)
+- `maxWidth`: largura máxima em pixels — mantém proporção, nunca amplia
+- `targetSizeMB`: tamanho alvo em MB (melhor esforço, sem garantia)
 
-Response `202 Accepted`:
+Resposta `202 Accepted`:
 ```json
 { "jobId": "uuid", "status": "queued" }
 ```
 
 ---
 
-### GET `/videos/:id`
+### `GET /videos/:id`
 
-Poll job status.
+Consulta o status e progresso do job.
 
 ```bash
-curl http://localhost:3000/videos/YOUR_JOB_ID
+curl http://localhost:3000/videos/SEU_JOB_ID
 ```
 
-Response:
 ```json
 {
   "id": "uuid",
@@ -108,79 +129,76 @@ Response:
 }
 ```
 
-**status values:** `queued` | `processing` | `done` | `failed`
+**Valores de `status`:** `queued` → `processing` → `done` | `failed`
 
-> `usedOriginal: true` means the compressed file was larger than the original — the original is returned as-is.
+> Se o arquivo comprimido ficar maior que o original, `usedOriginal: true` e o original é devolvido no download.
 
 ---
 
-### GET `/videos/:id/download`
+### `GET /videos/:id/download`
 
-Stream the compressed (or original) video file.
+Faz o stream do arquivo comprimido. Só funciona quando `status === "done"`.
 
 ```bash
-# Save to file
-curl -OJ http://localhost:3000/videos/YOUR_JOB_ID/download
-
-# With wget
-wget --content-disposition http://localhost:3000/videos/YOUR_JOB_ID/download
+# Salva com o nome original
+curl -OJ http://localhost:3000/videos/SEU_JOB_ID/download
 ```
-
-Only available when `status === "done"`.
 
 ---
 
-### DELETE `/videos/:id`
+### `DELETE /videos/:id`
 
-Delete a job and its associated files.
+Remove o job e os arquivos do disco.
 
 ```bash
-curl -X DELETE http://localhost:3000/videos/YOUR_JOB_ID
+curl -X DELETE http://localhost:3000/videos/SEU_JOB_ID
 ```
 
-Response: `204 No Content`
+Resposta: `204 No Content`
 
 ---
 
-## Compression presets
+## Presets de compressão
 
-| Preset | CRF | Audio |
-|---|---|---|
-| `high` | 23 | 128 kbps |
-| `medium` | 28 | 128 kbps |
-| `low` | 32 | 96 kbps |
+| Preset | CRF | Áudio | Uso indicado |
+|---|---|---|---|
+| `high` | 23 | 128 kbps | Máxima qualidade, menor redução de tamanho |
+| `medium` | 28 | 128 kbps | Equilíbrio entre qualidade e tamanho |
+| `low` | 32 | 96 kbps | Máxima redução, qualidade menor |
 
-Output is always H.264 + AAC in an MP4 container with `-movflags +faststart` (web-optimized).
+Saída sempre em H.264 + AAC, container MP4, com `-movflags +faststart` (otimizado para streaming web).
 
 ---
 
 ## Swagger
 
-Available at `http://localhost:3000/docs` (protected with basic auth — `SWAGGER_USER` / `SWAGGER_PASSWORD`).
+Disponível em `http://localhost:3000/docs` com autenticação básica (configurada via `SWAGGER_USER` e `SWAGGER_PASSWORD` no `.env`).
+
+Tem também um `postman-collection.json` na raiz — importe no Postman para testar todos os endpoints com o `jobId` preenchido automaticamente após o upload.
 
 ---
 
-## Running tests
+## Testes
 
 ```bash
 npm test
-npm run test:cov   # with coverage
+npm run test:cov  # com cobertura
 ```
 
 ---
 
-## Project structure
+## Estrutura do projeto
 
 ```
 src/
-├── config/            # Joi env validation
+├── config/              # Validação de env com Joi
 ├── common/
-│   ├── prisma/        # Global PrismaService
-│   └── filters/       # HttpExceptionFilter
+│   ├── prisma/          # PrismaService global
+│   └── filters/         # HttpExceptionFilter
 └── modules/
-    ├── videos/        # Controller + Service + DTOs
-    ├── jobs/          # BullMQ processor + repository
-    ├── ffmpeg/        # fluent-ffmpeg wrapper
-    ├── storage/       # File path management
-    └── cron-jobs/     # Hourly cleanup of expired jobs
+    ├── videos/          # Controller, Service e DTOs
+    ├── jobs/            # Processor BullMQ + repository
+    ├── ffmpeg/          # Wrapper do fluent-ffmpeg
+    ├── storage/         # Gerenciamento de caminhos de arquivo
+    └── cron-jobs/       # Limpeza automática de jobs expirados
 ```
